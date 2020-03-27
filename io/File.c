@@ -9,7 +9,7 @@
 
 static const int NUM_DIRECT_PTRS = 12;
 int ROOT_INODE_INDEX = 2;
-int DIRECTORY_ENTRY_SIZE = 22;
+const int DIRECTORY_ENTRY_SIZE = 22;
 
 typedef struct two_byte_ints
 {
@@ -33,10 +33,11 @@ typedef struct inodes
 
 typedef struct directory_entry
 {
-    _2_byte_int inode_num;
-    char file_name[20];
+    _2_byte_int inode_num; // 2
+    char file_name[DIRECTORY_ENTRY_SIZE - 2]; // 20
+    int filename_size;
 
-    char entry[22];
+    char entry[DIRECTORY_ENTRY_SIZE + 1]; // 20 + 2 + 1 (null)
 
 } dir_entry;
 
@@ -143,22 +144,28 @@ void parse_inode(inode* ind, int inode_db_idx)
     ind->inode_db_idx = inode_db_idx;
 }
 
-void convert_direntry_to_db(dir_entry* dir_arr, int dir_size)
+void convert_direntry_to_str(dir_entry* dir_arr, int dir_size)
 {
     for(int i = 0; i<dir_size; i++)
     {
+        convert_int_to_binary_char(dir_arr[i].inode_num.i_num, dir_arr[i].inode_num.b_num);
         for(int j = 0; j<DIRECTORY_ENTRY_SIZE; j++)
         {
             // inode_num
             if (j<2)
                 dir_arr[i].entry[j] = dir_arr[i].inode_num.b_num[j];
 
-            dir_arr[i].entry[j] = dir_arr[i].file_name[j-2];
+            else if(j - 2 < dir_arr[i].filename_size)
+                dir_arr[i].entry[j] = dir_arr[i].file_name[j - 2];
+            else
+                dir_arr[i].entry[j] = '\0';
         }
+
+        dir_arr[i].entry[DIRECTORY_ENTRY_SIZE] = '\0';
     }
 }
 
-void parse_dir(dir_entry* new_dir, char* db, int dir_size)
+void parse_dir_from_db(dir_entry* new_dir, char* db, int dir_size)
 {
     int entry_idx = 0;
     int char_idx = 0;
@@ -166,7 +173,7 @@ void parse_dir(dir_entry* new_dir, char* db, int dir_size)
     for(int i = 0; i<dir_size*DIRECTORY_ENTRY_SIZE; i++)
     {
         // next dir_entry
-        if(char_idx == DIRECTORY_ENTRY_SIZE - 1)
+        if(char_idx == DIRECTORY_ENTRY_SIZE)
         {
             char_idx = 0;
             entry_idx++;
@@ -188,20 +195,36 @@ void parse_dir(dir_entry* new_dir, char* db, int dir_size)
 
 inode walk_down_dir(int inode_idx, char* dir_path)
 {
-    printf("hey\n");
     inode new_inode;
 
     // load inode
     read_blocks_from_disk(1, &inode_idx, new_inode.inode_str);
     parse_inode(&new_inode, inode_idx); // dblock str to inode struct
 
-    // load db
-    char new_db[VDISK_BLOCK_SIZE_BYTES];
-    read_blocks_from_disk(1, &new_inode.dblocks_idx[0].i_num, new_db);
-    int num_nonzero_blocks = (new_inode.size / 512) + 1;
+    // go through all dblocks
+    for(int i = 0; new_inode.dblocks_idx[i].i_num != 0; i++)
+    {
+        // load db
+        char new_db[VDISK_BLOCK_SIZE_BYTES];
+        read_blocks_from_disk(1, &new_inode.dblocks_idx[i].i_num, new_db);
 
-    dir_entry new_dir_arr[new_inode.size];
-    parse_dir(new_dir_arr, new_db, new_inode.size);
+        int num_dir_entries;
+        if(new_inode.size < VDISK_BLOCK_SIZE_BYTES/DIRECTORY_ENTRY_SIZE)
+            num_dir_entries = new_inode.size;
+        else
+            num_dir_entries = VDISK_BLOCK_SIZE_BYTES/DIRECTORY_ENTRY_SIZE;
+        
+        // load the contents of this dir (per block) TODO maybe try all blocks at once
+        dir_entry new_dir_arr[num_dir_entries];
+        parse_dir_from_db(new_dir_arr, new_db, new_inode.size);
+
+        char dir_cpy[25] = "";
+        strcpy(dir_cpy, dir_path);
+
+        for(int j=0; j<num_dir_entries; j++)
+            printf("In root: %s\n", new_dir_arr[j].file_name);
+
+    }
 
     return new_inode;
 }
@@ -246,44 +269,54 @@ void concat_binarychar_str(char c, char* str, int str_size)
 
 void mk_dir(char* path_str)
 {
-    inode new_inode = create_empty_inode(1);
-    new_inode.inode_db_idx = get_next_free_block();
-    unset_nth_bit(new_inode.inode_db_idx);
+    // get inode for new dir
+    inode new_dir_inode = create_empty_inode(1);
+    new_dir_inode.inode_db_idx = get_next_free_block();
+    unset_nth_bit(new_dir_inode.inode_db_idx);
 
-    inode root_inode = walk_down_dir(ROOT_INODE_INDEX, ""); // TODO instead of root, use walk_dir
-
+    /* initialize dir stuff */
     dir_entry new_dir;
 
-    strcpy(new_dir.file_name, "usr");
-    new_dir.inode_num.i_num = 69;
+    strcpy(new_dir.file_name, path_str);
 
-    // read and append into parent db
-    char parent_dir_block[512];
-    read_blocks_from_disk(1, &root_inode.dblocks_idx[0].i_num, parent_dir_block);
+    new_dir.filename_size = 0;
+    for(int i = 0; new_dir.file_name[i] != '\0'; i++) // TODO: generalize
+        new_dir.filename_size++;
+
+    new_dir.inode_num.i_num = new_dir_inode.inode_db_idx;
+    convert_direntry_to_str(&new_dir, 1);
+    /* end dir stuff */
 
     /* append to parent's dblock */
-    convert_int_to_binary_char(new_dir.inode_num.i_num, new_dir.inode_num.b_num);
-    parent_dir_block[root_inode.size] = new_dir.inode_num.b_num[0];
-    parent_dir_block[root_inode.size + 1] = new_dir.inode_num.b_num[1];
+    int parent_inode_idx = ROOT_INODE_INDEX;
+    inode parent_inode = walk_down_dir(parent_inode_idx, ""); // TODO: instead of root, use walk_dir
 
-    for(int i = root_inode.size + 2; i<root_inode.size + 2 + 3; i++)
-        parent_dir_block[i] = new_dir.file_name[i - root_inode.size - 2];
+    char parent_dir_block[512];
+    read_blocks_from_disk(1, &parent_inode.dblocks_idx[0].i_num, parent_dir_block);
+
+    int parent_append_idx = parent_inode.size * DIRECTORY_ENTRY_SIZE;
+    for(int i = 0; i<DIRECTORY_ENTRY_SIZE; i++)
+        parent_dir_block[parent_append_idx++] = new_dir.entry[i];
+
     /* end append*/
 
-    root_inode.size += 2 + 3;
+    parent_inode.size++;
 
-    // write back parent's inode
-    convert_inode_to_dblock(root_inode, root_inode.inode_str);
-    write_block_to_disk(ROOT_INODE_INDEX, root_inode.inode_str, 32);
-    
-    // write back parent dblock
-    write_block_to_disk(root_inode.dblocks_idx[0].i_num, parent_dir_block, root_inode.size);
+    /* write back parent */
+    convert_inode_to_dblock(parent_inode, parent_inode.inode_str);
+    write_block_to_disk(parent_inode_idx, parent_inode.inode_str, 32);
+    write_block_to_disk(parent_inode.dblocks_idx[0].i_num, parent_dir_block, DIRECTORY_ENTRY_SIZE * parent_inode.size);
+
+    /* write dir dblock */
+    new_dir_inode.dblocks_idx[0].i_num = get_next_free_block(); // tell dir_inode where the block is at
+    unset_nth_bit(new_dir_inode.dblocks_idx[0].i_num);
+
+    char db[VDISK_BLOCK_SIZE_BYTES] = "new_d";
+    write_block_to_disk(new_dir_inode.dblocks_idx[0].i_num, db, 5);
 
     // write directory's inode
-    convert_inode_to_dblock(new_inode, new_inode.inode_str);
-    write_block_to_disk(new_inode.inode_db_idx, new_inode.inode_str, 32);
-
-    // write directory's dblock
+    convert_inode_to_dblock(new_dir_inode, new_dir_inode.inode_str);
+    write_block_to_disk(new_dir_inode.inode_db_idx, new_dir_inode.inode_str, 32);
 
 }
 
@@ -303,9 +336,6 @@ void create_root_dir_on_disk()
     strcpy(root_dir.file_name, "");
     root_inode.size = 0;
 
-    // write root inode to disk
-    convert_inode_to_dblock(root_inode, root_inode.inode_str);
-    write_block_to_disk(ROOT_INODE_INDEX, root_inode.inode_str, 32);
 
     // root db
     char root_db[512] = "";
@@ -315,6 +345,10 @@ void create_root_dir_on_disk()
 
     // 0 files in root rn
     root_inode.size = 0;
+
+    // write root inode to disk
+    convert_inode_to_dblock(root_inode, root_inode.inode_str);
+    write_block_to_disk(ROOT_INODE_INDEX, root_inode.inode_str, 32);
 
     // root db to disk
     write_block_to_disk(root_inode.dblocks_idx[0].i_num, root_db, 0);
@@ -326,9 +360,14 @@ int main()
     initLLFS();
     create_root_dir_on_disk();
 
-    mk_dir("");
+    mk_dir("usr");
+    mk_dir("local");
+    mk_dir("bin");
+    mk_dir("whatev");
 
-    // walk_down_dir(ROOT_INODE_INDEX, "");
+    printf("\n--------\n");
+    walk_down_dir(ROOT_INODE_INDEX, "");
+
 
     return 0;
 }

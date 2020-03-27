@@ -124,12 +124,6 @@ void set_nth_bit(int n)
     int row = n/8;
     int offset = n%8;
 
-    if (!offset) 
-    {
-        row--;
-        offset = 7;
-    }
-
     char c = block[row];
 
     block[row] = block[row] | bitmask_array[offset];
@@ -150,14 +144,7 @@ void unset_nth_bit(int n)
     int row = n/8;
     int offset = n%8;
 
-    if (!offset) 
-    {
-        row--;
-        offset = 7;
-    }
-
-    char c = block[row];
-
+    // printf("---%d, %d, %d---\n", n, row, offset);
     block[row] = block[row] & bitmask_array[offset];
 
     write_block_to_disk(1, block, 512);
