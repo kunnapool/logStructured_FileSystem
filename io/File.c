@@ -72,26 +72,24 @@ void convert_int_to_4byte_char(int i, char* c)
 
 }
 
-void convert_inode_to_dblock(inode i, char* inode_str)
-{   
-
-    char* str = inode_str;
+void convert_inode_to_dblock(inode* i)
+{
     int str_idx = 0;
-    strcpy(str, "");
+    strcpy(i->inode_str, "");
 
     char a[5] = "";
     char b[5] = "";
-    convert_int_to_4byte_char(i.size, a);
-    convert_int_to_4byte_char(i.is_dir, b);
+    convert_int_to_4byte_char(i->size, a);
+    convert_int_to_4byte_char(i->is_dir, b);
 
-    strncat(str, a, 4);
-    strncat(str, b, 4);
+    strncat(i->inode_str, a, 4);
+    strncat(i->inode_str, b, 4);
 
     str_idx = 8;
     for(int j = 0; j<NUM_DIRECT_PTRS; j++)
     {
         for(int k = 0; k<2; k++)
-            str[str_idx++] = i.dblocks_idx[j].b_num[k];
+            i->inode_str[str_idx++] = i->dblocks_idx[j].b_num[k];
     }
 
 }
@@ -294,7 +292,7 @@ void create_file(char* file_str, int file_str_size) //TODO parent_what???
     convert_int_to_binary_char(new_inode.dblocks_idx[0].i_num, new_inode.dblocks_idx[0].b_num);
     unset_nth_bit(next_free_db);
 
-    convert_inode_to_dblock(new_inode, new_inode.inode_str);
+    convert_inode_to_dblock(&new_inode);
     write_block_to_disk(new_inode.inode_db_idx, new_inode.inode_str, 32);
 
     write_block_to_disk(next_free_db, new_db, new_inode.size);
@@ -316,6 +314,7 @@ void mk_dir(char* path_str)
     inode new_dir_inode = create_empty_inode(1);
     new_dir_inode.inode_db_idx = get_next_free_block();
     unset_nth_bit(new_dir_inode.inode_db_idx);
+    new_dir_inode.size = 0;
 
     /* initialize dir stuff */
     dir_entry new_dir;
@@ -355,8 +354,8 @@ void mk_dir(char* path_str)
     parent_inode.size++;
 
     /* write back parent */
-    convert_inode_to_dblock(parent_inode, parent_inode.inode_str);
-    write_block_to_disk(parent_inode_idx, parent_inode.inode_str, 32);
+    convert_inode_to_dblock(&parent_inode);
+    write_block_to_disk(parent_inode.inode_db_idx, parent_inode.inode_str, 32);
     write_block_to_disk(parent_inode.dblocks_idx[0].i_num, parent_dir_block, DIRECTORY_ENTRY_SIZE * parent_inode.size);
 
     /* write dir dblock */
@@ -370,7 +369,7 @@ void mk_dir(char* path_str)
     write_block_to_disk(new_dir_inode.dblocks_idx[0].i_num, db, 0);
 
     // write directory's inode
-    convert_inode_to_dblock(new_dir_inode, new_dir_inode.inode_str);
+    convert_inode_to_dblock(&new_dir_inode);
     write_block_to_disk(new_dir_inode.inode_db_idx, new_dir_inode.inode_str, 32);
 
 }
@@ -402,7 +401,7 @@ void create_root_dir_on_disk()
     root_inode.size = 0;
 
     // write root inode to disk
-    convert_inode_to_dblock(root_inode, root_inode.inode_str);
+    convert_inode_to_dblock(&root_inode);
     write_block_to_disk(ROOT_INODE_INDEX, root_inode.inode_str, 32);
 
     // root db to disk
@@ -417,9 +416,9 @@ int main()
 
     mk_dir("/usr");
     mk_dir("/whatev");
-    mk_dir("/usr/local");
-    mk_dir("/usr/local/bin");
-    
+    mk_dir("/usr/hello");
+    mk_dir("/usr/sup");
+    mk_dir("/usr/lol");
 
     return 0;
 }
