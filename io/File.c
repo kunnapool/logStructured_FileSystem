@@ -270,35 +270,6 @@ inode walk_down_dir(int inode_idx, char* dir_path)
     return new_inode;
 }
 
-void create_file(char* file_str, int file_str_size) //TODO parent_what???
-{
-    int next_free_db = get_next_free_block();
-    unset_nth_bit(next_free_db);
-    inode new_inode = create_empty_inode(0);
-
-    new_inode.inode_db_idx = next_free_db;
-
-    next_free_db = get_next_free_block(); // for file db
-
-    char new_db[512];
-
-    for(int i = 0; i<file_str_size; i++)
-        new_db[i] = file_str[i];
-    
-    new_inode.size = file_str_size;
-
-    // TODO dblocks_idx[ new_node.size % 512 ]
-    new_inode.dblocks_idx[0].i_num = next_free_db;
-    convert_int_to_binary_char(new_inode.dblocks_idx[0].i_num, new_inode.dblocks_idx[0].b_num);
-    unset_nth_bit(next_free_db);
-
-    convert_inode_to_dblock(&new_inode);
-    write_block_to_disk(new_inode.inode_db_idx, new_inode.inode_str, 32);
-
-    write_block_to_disk(next_free_db, new_db, new_inode.size);
-
-}
-
 void concat_binarychar_str(char c, char* str, int str_size)
 {
     // shift things one place
@@ -306,6 +277,68 @@ void concat_binarychar_str(char c, char* str, int str_size)
         str[i] = str[i-1];
     
     str[0] = c;
+}
+
+void create_file(char* file_path_str, char* file_data_str) //TODO parent_what???
+{
+    /* set up new file inode */
+    inode new_file_inode = create_empty_inode(0);
+    new_file_inode.inode_db_idx = get_next_free_block();
+    unset_nth_bit(new_file_inode.inode_db_idx);
+
+    /* initialize dir stuff */
+    dir_entry new_dir;
+
+    char path_str_cpy[100];
+
+    int last_slash = 0;
+    for(new_dir.filename_size = 0; file_path_str[new_dir.filename_size] != '\0'; new_dir.filename_size++)
+        if(file_path_str[new_dir.filename_size] == '/')
+            last_slash = new_dir.filename_size;
+
+    int idx = 0;
+    for(int i = last_slash + 1; i<new_dir.filename_size; i++)
+        new_dir.file_name[idx++] = file_path_str[i];
+    
+    new_dir.file_name[idx] = '\0';
+    new_dir.filename_size = idx;
+
+    new_dir.inode_num.i_num = new_file_inode.inode_db_idx;
+    convert_direntry_to_str(&new_dir, 1);
+    /* end dir stuff */
+
+
+    /* append to parent's dblock */
+    int parent_inode_idx = ROOT_INODE_INDEX; // always start at root
+    inode parent_inode = walk_down_dir(parent_inode_idx, file_path_str); // TODO: instead of root, use walk_dir
+
+    char parent_dir_block[512];
+    read_blocks_from_disk(1, &parent_inode.dblocks_idx[(parent_inode.size * DIRECTORY_ENTRY_SIZE)/VDISK_BLOCK_SIZE_BYTES].i_num, parent_dir_block);
+
+    int parent_append_idx = parent_inode.size * DIRECTORY_ENTRY_SIZE;
+    for(int i = 0; i<DIRECTORY_ENTRY_SIZE; i++)
+        parent_dir_block[parent_append_idx++] = new_dir.entry[i];
+    /* end append*/
+
+    parent_inode.size++;
+
+    /* write back parent */
+    convert_inode_to_dblock(&parent_inode);
+    write_block_to_disk(parent_inode.inode_db_idx, parent_inode.inode_str, 32);
+    write_block_to_disk(parent_inode.dblocks_idx[0].i_num, parent_dir_block, DIRECTORY_ENTRY_SIZE * parent_inode.size);
+    /* end */
+
+    /* write file_block */
+    while(file_data_str[new_file_inode.size++] != '\0');
+
+    new_file_inode.dblocks_idx[0].i_num = get_next_free_block();
+    unset_nth_bit(new_file_inode.dblocks_idx[0].i_num);
+    write_block_to_disk(new_file_inode.dblocks_idx[0].i_num, file_data_str, new_file_inode.size);
+
+    /* write file inode */
+    convert_inode_to_dblock(&new_file_inode);
+    write_block_to_disk(new_file_inode.inode_db_idx, new_file_inode.inode_str, 32);
+
 }
 
 void mk_dir(char* path_str)
@@ -338,7 +371,6 @@ void mk_dir(char* path_str)
     /* end dir stuff */
 
     /* append to parent's dblock */
-    // if (strcmp(path_str, "/usr/local") == 0)
     int parent_inode_idx = ROOT_INODE_INDEX; // always start at root
     inode parent_inode = walk_down_dir(parent_inode_idx, path_str); // TODO: instead of root, use walk_dir
 
@@ -417,8 +449,8 @@ int main()
     mk_dir("/usr");
     mk_dir("/whatev");
     mk_dir("/usr/hello");
-    mk_dir("/usr/sup");
-    mk_dir("/usr/lol");
+    
+    create_file("/usr/file1", "This is a new file");
 
     return 0;
 }
