@@ -119,7 +119,7 @@ void set_nth_bit(int n)
     int x = 1;
     char block[VDISK_BLOCK_SIZE_BYTES];
     
-    read_blocks_from_disk(1, &x, block);
+    read_blocks_from_disk(1, x, block);
 
     int row = n/8;
     int offset = n%8;
@@ -139,7 +139,7 @@ void unset_nth_bit(int n)
     int x = 1;
     char block[VDISK_BLOCK_SIZE_BYTES];
     
-    read_blocks_from_disk(1, &x, block);
+    read_blocks_from_disk(1, x, block);
 
     int row = n/8;
     int offset = n%8;
@@ -159,7 +159,7 @@ void count_all_set_bits()
 
     char block[VDISK_BLOCK_SIZE_BYTES];
 
-    read_blocks_from_disk(1, &free_bit_block_idx, block);
+    read_blocks_from_disk(1, free_bit_block_idx, block);
 
     int count = 0;
     for(int i=0; i<VDISK_BLOCK_SIZE_BYTES; i++)
@@ -181,7 +181,7 @@ int get_next_free_block()
 
     char bitmask_array[] = {0b10000000, 0b01000000, 0b00100000, 0b00010000, 0b00001000, 0b00000100, 0b00000010, 0b00000001};
 
-    read_blocks_from_disk(1, &fb_idx, free_block);
+    read_blocks_from_disk(1, fb_idx, free_block);
 
     fb_idx = 0; // free data-blocks start at 10
     for(int i = 0; i<VDISK_BLOCK_SIZE_BYTES; i++)
