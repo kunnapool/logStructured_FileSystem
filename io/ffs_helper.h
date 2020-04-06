@@ -4,7 +4,7 @@
 
 static const int VDISK_BLOCK_SIZE_BYTES = 512;
 static const int MAX_BLOCKS = 4096;
-static const int MAX_VDISK_SIZE_BYTES = VDISK_BLOCK_SIZE_BYTES * MAX_BLOCKS; // 2 MB in Bytes
+int MAX_VDISK_SIZE_BYTES = VDISK_BLOCK_SIZE_BYTES * MAX_BLOCKS; // 2 MB in Bytes
 static const int MAX_INODES = 128;
 
 static const char VDISK_PATH_STR[] = "vdisk";
