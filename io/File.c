@@ -9,7 +9,8 @@
 
 static const int NUM_DIRECT_PTRS = 12;
 int ROOT_INODE_INDEX = 2;
-const int DIRECTORY_ENTRY_SIZE = 22;
+static const int DIRECTORY_ENTRY_SIZE = 22;
+static const int VDISK_BLOCK_SIZE_BYTES = 512;
 
 typedef struct two_byte_ints
 {
