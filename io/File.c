@@ -370,7 +370,7 @@ inode setup_file_and_update_parent(int is_dir, char* file_path_str)
     /* initialize new_dir stuff */
     dir_entry new_dir;
 
-    char path_str_cpy[100];
+    char path_str_cpy[1000];
 
     int last_slash = 0;
     for(new_dir.filename_size = 0; file_path_str[new_dir.filename_size] != '\0'; new_dir.filename_size++)
@@ -412,7 +412,7 @@ inode setup_file_and_update_parent(int is_dir, char* file_path_str)
     return new_inode;
 }
 
-void create_file(char* file_path_str, char* file_data_str) //TODO parent_what???
+void create_file(char* file_path_str, char* file_data_str)
 {
     inode new_file_inode;
     new_file_inode = setup_file_and_update_parent(0, file_path_str);
@@ -462,14 +462,14 @@ void del_file(char* file_path)
     char* fname;
 
     /* file name */
-    int fpath_size = 0;
-    for(fpath_size; file_path[fpath_size] != '\0'; fpath_size++){}
+    int fpath_size;
+    for(fpath_size = 0; file_path[fpath_size] != '\0'; fpath_size++){}
 
     int ls;
     for(ls = fpath_size - 1; file_path[ls] != '/'; )
         ls--;
 
-    fname = &file_path[--ls];
+    fname = &file_path[++ls];
     /* end */
 
     for(int i = 0; parent_inode.dblocks_idx[i].i_num != 0; i++)
@@ -599,43 +599,10 @@ void create_root_dir_on_disk()
 
 }
 
-int main()
+void initLLFS()
 {
-    initLLFS();
+    setup_vdisk();
+    setup_free_block();
+
     create_root_dir_on_disk();
-
-    mk_dir("/usr");
-    mk_dir("/whatev");
-    mk_dir("/lulz");
-    mk_dir("/lulz2");
-    mk_dir("/usr/hello");
-    mk_dir("/usr/lol");
-    // printf("-------------------------------------------------------\n");
-
-    char *str = "These are reserved words in C language are int, float, "
-               "if, else, for, while etc. An Identifier is a sequence of"
-               "letters and digits, but must start with a letter. "
-               "Underscore ( _ ) is treated as a letter. Identifiers are "
-               "case sensitive. Identifiers are used to name variables,"
-               "functions etc.These are reserved words in C language are int, float, "
-               "if, else, for, while etc. An Identifier is a sequence of"
-               "letters and digits, but must start with a letter. "
-               "Underscore ( _ ) is treated as a letter. Identifiers are "
-               "case sensitive. Identifiers are used to name variables,"
-               "functions etc.These are reserved words in C language are int, float, "
-               "if, else, for, while etc. An Identifier is a sequence of"
-               "letters and digits, but must start with a letter. "
-               "Underscore ( _ ) is treated as a letter. Identifiers are "
-               "case sensitive. Identifiers are used to name variables,"
-               "functions etc.";
-
-    create_file("/usr/hello2/file1", "small file 1");
-    create_file("/usr/hello2/file2", "small file 2");
-
-    del_file("/usr/hello2/file1");
-
-
-
-    flush_log_segment(); // always flush log segment before terminating
-    return 0;
 }

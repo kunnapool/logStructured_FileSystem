@@ -16,8 +16,6 @@ void setup_vdisk();
 
 void setup_free_block();
 
-void initLLFS();
-
 void set_nth_bit(int n);
 
 void unset_nth_bit(int n);

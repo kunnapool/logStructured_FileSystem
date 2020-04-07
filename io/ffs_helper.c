@@ -76,13 +76,16 @@ void setup_vdisk()
     sprintf(num_blocks, "%d", MAX_BLOCKS);
     sprintf(inodes, "0%d", MAX_INODES);
     
-    strcat(super_block, magic_no);
+    strcpy(super_block, magic_no);
     strcat(super_block, num_blocks);
     strcat(super_block, inodes);
 
-    // printf("%s", super_block);
+    // printf("%s\n", super_block);
 
     write_block_to_disk(0, super_block, 12);
+
+    for(int i = 1; i<MAX_BLOCKS; i++)
+        write_block_to_disk(i, NULL, 0);
 
 }
 
@@ -103,12 +106,6 @@ void setup_free_block()
 
     write_block_to_disk(1, fb, VDISK_BLOCK_SIZE_BYTES);
     
-}
-
-void initLLFS()
-{
-    setup_vdisk();
-    setup_free_block();
 }
 
 void set_nth_bit(int n)
