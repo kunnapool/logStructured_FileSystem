@@ -274,7 +274,7 @@ inode walk_down_dir(int inode_idx, char* dir_path)
 
         // load the contents of this dir (per block) TODO maybe try all blocks at once
         dir_entry new_dir_arr[num_dir_entries];
-        parse_dir_from_db(new_dir_arr, new_db, num_dir_entries);
+        parse_dir_from_db(new_dir_arr, new_db, new_inode.size);
 
         char dir_cpy[25] = "";
         strcpy(dir_cpy, dir_path);
@@ -311,13 +311,6 @@ void concat_binarychar_str(char c, char* str, int str_size)
     str[0] = c;
 }
 
-void flush_log_segment()
-{
-    for(int i = 0; i<LOG_SEG_IDX; i++)
-            write_block_to_disk(LOG_SEGMENT_ARR[i].vdisk_index, LOG_SEGMENT_ARR[i].db, LOG_SEGMENT_ARR[i].data_size);
-        LOG_SEG_IDX = 0;
-}
-
 void append_log_segment(int db_idx, char* db, int data_size)
 {
     // update existing block
@@ -340,7 +333,11 @@ void append_log_segment(int db_idx, char* db, int data_size)
 
     // flush log
     if (LOG_SEG_IDX == MAX_LOG_SEGMENT_SIZE)
-        flush_log_segment();
+    {
+        for(int i = 0; i<MAX_LOG_SEGMENT_SIZE; i++)
+            write_block_to_disk(LOG_SEGMENT_ARR[i].vdisk_index, LOG_SEGMENT_ARR[i].db, LOG_SEGMENT_ARR[i].data_size);
+        LOG_SEG_IDX = 0;
+    }
     else
     {
         LOG_SEGMENT_ARR[LOG_SEG_IDX].data_size = data_size;
@@ -367,7 +364,7 @@ inode setup_file_and_update_parent(int is_dir, char* file_path_str)
     new_inode.inode_db_idx = get_next_free_block();
     unset_nth_bit(new_inode.inode_db_idx);
 
-    /* initialize new_dir stuff */
+    /* initialize dir_entry stuff */
     dir_entry new_dir;
 
     char path_str_cpy[100];
@@ -386,15 +383,14 @@ inode setup_file_and_update_parent(int is_dir, char* file_path_str)
 
     new_dir.inode_num.i_num = new_inode.inode_db_idx;
     convert_direntry_to_str(&new_dir, 1);
-    /* end new_dir stuff */
+    /* end dir_entry stuff */
 
     /* append to parent dir' dblock */
     int parent_inode_idx = ROOT_INODE_INDEX; // always start at root
-    inode parent_inode = walk_down_dir(parent_inode_idx, file_path_str);
+    inode parent_inode = walk_down_dir(parent_inode_idx, file_path_str); // TODO: instead of root, use walk_dir
 
     char parent_dir_block[512];
-    int parent_inode_ptr = (parent_inode.size * DIRECTORY_ENTRY_SIZE)/VDISK_BLOCK_SIZE_BYTES;
-    read_from_segment_or_disk(parent_inode.dblocks_idx[parent_inode_ptr].i_num, parent_dir_block);
+    read_from_segment_or_disk(parent_inode.dblocks_idx[(parent_inode.size * DIRECTORY_ENTRY_SIZE)/VDISK_BLOCK_SIZE_BYTES].i_num, parent_dir_block);
 
     int parent_append_idx = parent_inode.size * DIRECTORY_ENTRY_SIZE;
     for(int i = 0; i<DIRECTORY_ENTRY_SIZE; i++)
@@ -406,7 +402,7 @@ inode setup_file_and_update_parent(int is_dir, char* file_path_str)
     /* write back parent */
     convert_inode_to_dblock(&parent_inode);
     append_log_segment(parent_inode.inode_db_idx, parent_inode.inode_str, 32);
-    append_log_segment(parent_inode.dblocks_idx[parent_inode_ptr].i_num, parent_dir_block, (DIRECTORY_ENTRY_SIZE * parent_inode.size)%VDISK_BLOCK_SIZE_BYTES);
+    append_log_segment(parent_inode.dblocks_idx[0].i_num, parent_dir_block, DIRECTORY_ENTRY_SIZE * parent_inode.size);
     /* end */
 
     return new_inode;
@@ -420,31 +416,9 @@ void create_file(char* file_path_str, char* file_data_str) //TODO parent_what???
     /* write file_block */
     while(file_data_str[new_file_inode.size++] != '\0');
 
-    char new_file_db[VDISK_BLOCK_SIZE_BYTES];
-    
-    int db_idx = 0;
-    int i;
-    for(i = 0; i<new_file_inode.size; i++)
-    {
-        if (i % VDISK_BLOCK_SIZE_BYTES == 0)
-        {
-            new_file_inode.dblocks_idx[i/VDISK_BLOCK_SIZE_BYTES].i_num = get_next_free_block();
-            unset_nth_bit(new_file_inode.dblocks_idx[i/VDISK_BLOCK_SIZE_BYTES].i_num);
-            db_idx = 0;
-
-            if(i != 0)
-                // write last block
-                append_log_segment(new_file_inode.dblocks_idx[i/VDISK_BLOCK_SIZE_BYTES - 1].i_num, new_file_db, VDISK_BLOCK_SIZE_BYTES);
-            
-            strcpy(new_file_db, "");
-        }
-        new_file_db[db_idx++] = file_data_str[i];
-    }
-
-    // remaining
-    if (strcmp(new_file_db, "") != 0)
-        append_log_segment(new_file_inode.dblocks_idx[i/VDISK_BLOCK_SIZE_BYTES].i_num, new_file_db, new_file_inode.size % VDISK_BLOCK_SIZE_BYTES);
-
+    new_file_inode.dblocks_idx[0].i_num = get_next_free_block();
+    unset_nth_bit(new_file_inode.dblocks_idx[0].i_num);
+    append_log_segment(new_file_inode.dblocks_idx[0].i_num, file_data_str, new_file_inode.size);
 
     /* write file inode */
     convert_inode_to_dblock(&new_file_inode);
@@ -454,94 +428,8 @@ void create_file(char* file_path_str, char* file_data_str) //TODO parent_what???
 
 }
 
-void del_file(char* file_path)
-{
-    inode parent_inode = walk_down_dir(ROOT_INODE_INDEX, file_path);
-
-    char parent_db[VDISK_BLOCK_SIZE_BYTES];
-    char* fname;
-
-    /* file name */
-    int fpath_size = 0;
-    for(fpath_size; file_path[fpath_size] != '\0'; fpath_size++){}
-
-    int ls;
-    for(ls = fpath_size - 1; file_path[ls] != '/'; )
-        ls--;
-
-    fname = &file_path[--ls];
-    /* end */
-
-    for(int i = 0; parent_inode.dblocks_idx[i].i_num != 0; i++)
-    {
-        read_from_segment_or_disk(parent_inode.dblocks_idx[i].i_num, parent_db);
-
-        int num_dir_entries;
-        int del_idx = -1;
-        if(parent_inode.size < VDISK_BLOCK_SIZE_BYTES/DIRECTORY_ENTRY_SIZE)
-            num_dir_entries = parent_inode.size;
-        else
-            num_dir_entries = VDISK_BLOCK_SIZE_BYTES/DIRECTORY_ENTRY_SIZE; // max possible # dir par block
-        
-        dir_entry parent_dir_arr[num_dir_entries];
-        parse_dir_from_db(parent_dir_arr, parent_db, num_dir_entries);
-
-        /* remove dir_entry */
-        for(int j = 0; j<num_dir_entries; j++)
-            if(strcmp(parent_dir_arr[j].file_name, fname) == 0)
-                del_idx = j;
-
-        // anything to del?
-        if (del_idx != -1 && del_idx<num_dir_entries)
-        {   
-            /* free free-block vector */
-            inode del_file_inode;
-            read_from_segment_or_disk(parent_dir_arr[del_idx].inode_num.i_num, del_file_inode.inode_str);
-            parse_inode(&del_file_inode, parent_dir_arr[del_idx].inode_num.i_num);
-
-            for(int s = 0; del_file_inode.dblocks_idx[s].i_num != 0; s++)
-                set_nth_bit(del_file_inode.dblocks_idx[s].i_num);
-
-            // free the block
-            set_nth_bit(parent_dir_arr[del_idx].inode_num.i_num);
-
-            /* end free free-block vector */
-
-            // remove dir_arr entry
-            for(int j = del_idx; j<num_dir_entries - 1; j++)
-                parent_dir_arr[j] = parent_dir_arr[j+1];
-
-            num_dir_entries--;
-            parent_inode.size--;
-
-            // write back parent inode
-            convert_inode_to_dblock(&parent_inode);
-            append_log_segment(parent_inode.inode_db_idx, parent_inode.inode_str, DIRECTORY_ENTRY_SIZE * parent_inode.size);
-
-            // write back parent dblock
-            convert_direntry_to_str(parent_dir_arr, num_dir_entries);
-            int parent_db_idx = 0;
-
-            /* dir_arr -> dblock */
-            for(int k = 0; k<num_dir_entries; k++)
-                for(int l = 0; parent_dir_arr[k].entry[l] != '\0'; l++)
-                    parent_db[parent_db_idx++] = parent_dir_arr[k].entry[l];
-            /* end */
-
-            append_log_segment(parent_inode.dblocks_idx[i].i_num, parent_db, parent_inode.size * DIRECTORY_ENTRY_SIZE);
-        }
-        /* end remove dir_entry */
-
-        // already deleted dir. entry
-        if (del_idx != -1)
-            break;
-
-    }
-}
-
 void mk_dir(char* path_str)
 {
-    // TODO deal with duplicates
     inode new_dir_inode;
 
     new_dir_inode = setup_file_and_update_parent(1, path_str);
@@ -606,36 +494,10 @@ int main()
 
     mk_dir("/usr");
     mk_dir("/whatev");
-    mk_dir("/lulz");
-    mk_dir("/lulz2");
     mk_dir("/usr/hello");
-    mk_dir("/usr/lol");
-    // printf("-------------------------------------------------------\n");
+    mk_dir("/usr/hello2");
+    printf("-------------------------------------------------------\n");
+    create_file("/usr/hello/file69", "This is a new file");
 
-    char *str = "These are reserved words in C language are int, float, "
-               "if, else, for, while etc. An Identifier is a sequence of"
-               "letters and digits, but must start with a letter. "
-               "Underscore ( _ ) is treated as a letter. Identifiers are "
-               "case sensitive. Identifiers are used to name variables,"
-               "functions etc.These are reserved words in C language are int, float, "
-               "if, else, for, while etc. An Identifier is a sequence of"
-               "letters and digits, but must start with a letter. "
-               "Underscore ( _ ) is treated as a letter. Identifiers are "
-               "case sensitive. Identifiers are used to name variables,"
-               "functions etc.These are reserved words in C language are int, float, "
-               "if, else, for, while etc. An Identifier is a sequence of"
-               "letters and digits, but must start with a letter. "
-               "Underscore ( _ ) is treated as a letter. Identifiers are "
-               "case sensitive. Identifiers are used to name variables,"
-               "functions etc.";
-
-    create_file("/usr/hello2/file1", "small file 1");
-    create_file("/usr/hello2/file2", "small file 2");
-
-    del_file("/usr/hello2/file1");
-
-
-
-    flush_log_segment(); // always flush log segment before terminating
     return 0;
 }
