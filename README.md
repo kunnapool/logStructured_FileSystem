@@ -28,3 +28,6 @@ with an empty data-block.
 
 Due to the time crunch, robustness was not included in this FS. The plan: an fsck like check that checks
 whether or not the free-bit vector agrees with the actual data present.
+
+P.S: Just a quick note, while testing on linux server, it took ~6-7 seconds to run (setting up everything, etc).
+This delay was only observed on the server and not on my local machine (probably a lot of users at the time of testing)
