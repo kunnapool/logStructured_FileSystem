@@ -10,6 +10,7 @@
 static const int NUM_DIRECT_PTRS = 12;
 int ROOT_INODE_INDEX = 2;
 #define DIRECTORY_ENTRY_SIZE 22
+#define MAX_LOG_SEGMENT_SIZE 10
 
 typedef struct two_byte_ints
 {
@@ -51,7 +52,6 @@ typedef struct LogEntry
 } LogEntry;
 
 int LOG_SEG_IDX = 0;
-const static int MAX_LOG_SEGMENT_SIZE = 10;
 LogEntry LOG_SEGMENT_ARR[MAX_LOG_SEGMENT_SIZE];
 
 void convert_int_to_4byte_char(int i, char* c)
